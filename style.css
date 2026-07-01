@@ -1,0 +1,205 @@
+/* ---------- Base ---------- */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: linear-gradient(160deg, #ffd6e8 0%, #ffb3d1 45%, #ff8fc2 100%);
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* ---------- Contenedor de emojis flotantes ---------- */
+#floating-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.emoji-flotante {
+  position: absolute;
+  bottom: -10%;
+  font-size: 28px;
+  opacity: 0.9;
+  animation-name: flotar;
+  animation-timing-function: ease-in;
+  animation-fill-mode: forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes flotar {
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg);
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-115vh) translateX(var(--drift, 20px)) rotate(20deg);
+    opacity: 0;
+  }
+}
+
+/* ---------- Contenido central ---------- */
+.content {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  padding: 40px 24px;
+}
+
+.titulo {
+  font-size: clamp(2.2rem, 6vw, 3.6rem);
+  color: #ffffff;
+  text-shadow: 0 2px 12px rgba(219, 39, 119, 0.55), 0 0 2px rgba(0,0,0,0.15);
+  font-weight: 800;
+  letter-spacing: 1px;
+  animation: latido 1.6s ease-in-out infinite;
+}
+
+.nombre {
+  color: #fff0f7;
+  text-decoration: underline wavy #ffffffb0;
+  text-underline-offset: 6px;
+}
+
+@keyframes latido {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+/* ---------- Rosa CSS ---------- */
+.rosa-contenedor {
+  position: relative;
+  width: 220px;
+  height: 300px;
+  margin: 50px auto 0;
+  opacity: 0;
+  transform: translateY(40px) scale(0.6);
+  animation: aparecerRosa 1.4s ease-out 0.6s forwards;
+}
+
+@keyframes aparecerRosa {
+  0% {
+    opacity: 0;
+    transform: translateY(40px) scale(0.4) rotate(-10deg);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.05) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+}
+
+.tallo {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 6px;
+  height: 150px;
+  background: linear-gradient(#3fa34d, #2e7d32);
+  border-radius: 4px;
+  transform: translateX(-50%);
+}
+
+.hoja {
+  position: absolute;
+  bottom: 60px;
+  width: 40px;
+  height: 22px;
+  background: #43a047;
+  border-radius: 0 100% 0 100%;
+}
+
+.hoja-izq {
+  left: calc(50% - 38px);
+  transform: rotate(20deg);
+}
+
+.hoja-der {
+  left: calc(50% + 2px);
+  transform: rotate(-20deg) scaleX(-1);
+}
+
+.rosa {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 120px;
+  height: 120px;
+  transform: translateX(-50%);
+  animation: girarSuave 6s ease-in-out infinite;
+}
+
+@keyframes girarSuave {
+  0%, 100% { transform: translateX(-50%) rotate(-2deg); }
+  50% { transform: translateX(-50%) rotate(2deg); }
+}
+
+.petalo {
+  position: absolute;
+  width: 66px;
+  height: 66px;
+  background: radial-gradient(circle at 30% 30%, #ff8fb3, #e6317f 70%, #c2185b);
+  border-radius: 0% 60% 0% 60%;
+  top: 27px;
+  left: 27px;
+  box-shadow: inset 0 0 12px rgba(120, 0, 50, 0.35);
+}
+
+.petalo-1 { transform: rotate(0deg) translate(0, -14px) scale(0.95); z-index: 5; }
+.petalo-2 { transform: rotate(72deg) translate(0, -14px) scale(0.95); z-index: 4; }
+.petalo-3 { transform: rotate(144deg) translate(0, -14px) scale(0.95); z-index: 3; }
+.petalo-4 { transform: rotate(216deg) translate(0, -14px) scale(0.95); z-index: 2; }
+.petalo-5 { transform: rotate(288deg) translate(0, -14px) scale(0.95); z-index: 1; }
+
+.centro {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  background: radial-gradient(circle at 35% 35%, #ff5c9c, #b0134f);
+  border-radius: 0% 60% 0% 60%;
+  top: 43px;
+  left: 43px;
+  z-index: 6;
+  box-shadow: inset 0 0 8px rgba(90, 0, 40, 0.5);
+}
+
+/* ---------- Responsivo ---------- */
+@media (max-width: 480px) {
+  .rosa-contenedor {
+    width: 180px;
+    height: 250px;
+  }
+  .rosa {
+    width: 100px;
+    height: 100px;
+  }
+}
+
+/* ---------- Respeto a "reducir movimiento" ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .titulo,
+  .rosa,
+  .rosa-contenedor,
+  .emoji-flotante {
+    animation: none !important;
+  }
+  .rosa-contenedor {
+    opacity: 1;
+    transform: none;
+  }
+}
