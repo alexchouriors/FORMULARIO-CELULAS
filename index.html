@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reportes de Célula — Multi-registro</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Reportes de Célula</h1>
+      <p>Registro de múltiples células en una misma sesión</p>
+    </div>
+    <div class="session-count" id="sessionCount">0 células añadidas</div>
+  </header>
+
+  <!-- DATOS GENERALES -->
+  <div class="card">
+    <h2 style="justify-content:space-between;">
+      <span>Datos generales</span>
+      <button type="button" class="btn-import" onclick="abrirModalImportar()">📥 Importar</button>
+    </h2>
+    <div class="grid2">
+      <div class="field">
+        <label for="nombreCelula">Nombre de célula</label>
+        <input type="text" id="nombreCelula" placeholder="Ej: Célula Vida Nueva">
+        <div class="tag-group">
+          <button type="button" class="tag-btn" data-tag="Nueva" onclick="toggleTag('Nueva')">Nueva</button>
+          <button type="button" class="tag-btn" data-tag="Cerrada" onclick="toggleTag('Cerrada')">Cerrada</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="fecha">Fecha</label>
+        <input type="date" id="fecha">
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="field">
+        <label for="equipo">Equipo</label>
+        <select id="equipo">
+          <option value="">Selecciona un equipo...</option>
+          <option value="EQUIPO JONATHAN Y MAYERLIN">EQUIPO JONATHAN Y MAYERLIN</option>
+          <option value="EQUIPO RENNY Y AIRAM">EQUIPO RENNY Y AIRAM</option>
+          <option value="EQUIPO MAGALIS, EDITH Y ALEXANDRO">EQUIPO MAGALIS, EDITH Y ALEXANDRO</option>
+          <option value="EQUIPO JOSEFA, DAYANA Y FRANGLYS">EQUIPO JOSEFA, DAYANA Y FRANGLYS</option>
+          <option value="EQUIPO YENSI, SORENNYS Y YELSSY">EQUIPO YENSI, SORENNYS Y YELSSY</option>
+        </select>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="field">
+        <label for="ubicacion">Ubicación</label>
+        <input type="text" id="ubicacion" placeholder="Ej: Casa de la familia Colina">
+      </div>
+      <div class="field">
+        <label for="tema">Tema</label>
+        <input type="text" id="tema" placeholder="Ej: El fruto del Espíritu">
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="field">
+        <label for="cita">Cita bíblica</label>
+        <input type="text" id="cita" placeholder="Ej: Gálatas 5:22-23">
+      </div>
+      <div></div>
+    </div>
+
+    <div class="field">
+      <label>Líder principal <span class="hint">(máx. 3)</span></label>
+      <div id="lideresPrincipales"></div>
+      <button type="button" class="btn-add-small" id="btnAddLiderPrincipal" onclick="addSimpleField('lideresPrincipales')">+ Agregar líder</button>
+    </div>
+
+    <div class="field">
+      <label>Líder de célula <span class="hint">(máx. 3)</span></label>
+      <div id="lideresCelula"></div>
+      <button type="button" class="btn-add-small" id="btnAddLiderCelula" onclick="addSimpleField('lideresCelula')">+ Agregar líder</button>
+    </div>
+
+    <div class="field">
+      <label>Anfitrión <span class="hint">(máx. 2)</span></label>
+      <div id="anfitrion"></div>
+      <button type="button" class="btn-add-small" id="btnAddAnfitrion" onclick="addSimpleField('anfitrion')">+ Agregar anfitrión</button>
+    </div>
+  </div>
+
+  <!-- FILTRO: OCULTAR NOMBRES -->
+  <div class="filter-bar">
+    <label class="filter-toggle">
+      <input type="checkbox" id="chkOcultarNombres" onchange="toggleOcultarNombres()">
+      <span>👁️ Ocultar nombres y ver solo cantidades (Asistencia, Niños e Inasistencias)</span>
+    </label>
+  </div>
+
+  <!-- ASISTENTES -->
+  <div class="card" id="cardAsistentes">
+    <h2>Asistentes <span class="badge" id="badgeAsistentes">0</span></h2>
+    <p class="hidden-names-note">Nombres ocultos — mostrando solo cantidades. Desactiva el filtro para verlos o editarlos.</p>
+    <div id="listaAsistentes"></div>
+    <button type="button" class="btn-add" id="btnAddAsistente" onclick="addPersonRow('asistentes')">+ Agregar fila</button>
+    <div class="counts" id="countsAsistentes"></div>
+  </div>
+
+  <!-- NIÑOS -->
+  <div class="card" id="cardNinos">
+    <h2>Niños <span class="badge" id="badgeNinos">0</span></h2>
+    <p class="hidden-names-note">Nombres ocultos — mostrando solo cantidades. Desactiva el filtro para verlos o editarlos.</p>
+    <div id="listaNinos"></div>
+    <button type="button" class="btn-add" id="btnAddNino" onclick="addPersonRow('ninos')">+ Agregar fila</button>
+  </div>
+
+  <!-- INASISTENCIAS -->
+  <div class="card" id="cardInasistencias">
+    <h2>Inasistencias <span class="badge" id="badgeInasistencias">0</span></h2>
+    <p class="hidden-names-note">Nombres ocultos — mostrando solo cantidades. Desactiva el filtro para verlos o editarlos.</p>
+    <div id="listaInasistencias"></div>
+    <button type="button" class="btn-add" id="btnAddInasistencia" onclick="addPersonRow('inasistencias')">+ Agregar fila</button>
+  </div>
+
+  <!-- OFRENDA -->
+  <div class="card" id="cardOfrenda">
+    <h2>Ofrenda</h2>
+    <div class="offering-grid">
+      <div class="field">
+        <label for="efectivo">Efectivo (VES)</label>
+        <input type="number" id="efectivo" min="0" step="0.01" value="0" oninput="updateOfferingTotal()">
+      </div>
+      <div class="field">
+        <label for="transferencia">Transferencia / Pago Móvil (VES)</label>
+        <input type="number" id="transferencia" min="0" step="0.01" value="0" oninput="updateOfferingTotal()">
+      </div>
+      <div class="field">
+        <label for="dolares">Dólares ($)</label>
+        <input type="number" id="dolares" min="0" step="0.01" value="0" oninput="updateOfferingTotal()">
+      </div>
+    </div>
+    <div class="offering-total">
+      <span>Total en Bs (Efectivo + Transferencia)</span>
+      <span id="totalVES">Bs 0.00</span>
+    </div>
+    <div class="offering-total" id="totalUSDRow" style="margin-top:8px;">
+      <span>Total en $ (USD)</span>
+      <span id="totalUSD">$ 0.00</span>
+    </div>
+    <div class="field" style="margin-top:14px;">
+      <label for="nota">Nota</label>
+      <textarea id="nota" placeholder="Escribe aquí cualquier observación..." rows="3"
+        style="border:1px solid var(--line); border-radius:6px; padding:9px 10px; font-size:0.92rem; font-family:inherit; resize:vertical; width:100%;"></textarea>
+    </div>
+  </div>
+
+  <div class="actions-form">
+    <span class="editing-flag" id="editingFlag" style="display:none;">✎ Editando célula existente</span>
+    <button type="button" class="btn-secondary" onclick="limpiarFormulario()">Limpiar / Cancelar</button>
+    <button type="button" class="btn-primary" id="btnAnadir" onclick="anadirCelula()">+ Añadir célula</button>
+  </div>
+
+  <!-- REPORTES ACUMULADOS -->
+  <div class="card">
+    <h2 style="justify-content:space-between; flex-wrap:wrap;">
+      <span>Células añadidas en esta sesión <span class="badge" id="badgeSesion">0</span></span>
+      <span style="display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font-weight:400;">
+        <label for="filtroEquipo" style="font-size:0.78rem; color:var(--muted); font-weight:600;">Filtrar:</label>
+        <select id="filtroEquipo" onchange="filtrarPorEquipo(this.value)" style="padding:6px 8px; font-size:0.8rem; width:auto; max-width:220px;">
+          <option value="">Todos los equipos</option>
+          <option value="EQUIPO JONATHAN Y MAYERLIN">EQUIPO JONATHAN Y MAYERLIN</option>
+          <option value="EQUIPO RENNY Y AIRAM">EQUIPO RENNY Y AIRAM</option>
+          <option value="EQUIPO MAGALIS, EDITH Y ALEXANDRO">EQUIPO MAGALIS, EDITH Y ALEXANDRO</option>
+          <option value="EQUIPO JOSEFA, DAYANA Y FRANGLYS">EQUIPO JOSEFA, DAYANA Y FRANGLYS</option>
+          <option value="EQUIPO YENSI, SORENNYS Y YELSSY">EQUIPO YENSI, SORENNYS Y YELSSY</option>
+        </select>
+        <span id="filtroConteo" style="font-size:0.78rem; color:var(--accent); font-weight:700; white-space:nowrap;"></span>
+      </span>
+    </h2>
+    <div class="saved-reports" id="savedReportsList">
+      <div class="empty-state">Aún no has añadido ninguna célula. Completa el formulario y presiona "Añadir célula".</div>
+    </div>
+    <div style="text-align:right; margin-top:10px;">
+      <button type="button" class="btn-danger-outline" onclick="borrarProgresoGuardado()" style="font-size:0.72rem; padding:5px 10px;">Borrar progreso guardado</button>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button type="button" class="btn-primary" onclick="copiarAlPortapapeles(event)" id="btnCopiar" disabled>Copiar al portapapeles</button>
+    <button type="button" class="btn-totalizar" onclick="toggleTotalizar()" id="btnTotalizar" disabled>Totalizar</button>
+  </div>
+  <p id="totalizarHint" style="text-align:right; font-size:0.78rem; color:var(--muted); margin-top:6px;">
+    Totalizar está desactivado: al copiar solo se incluirán las células, sin el resumen general.
+  </p>
+
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
