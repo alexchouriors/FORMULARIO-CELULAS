@@ -178,9 +178,14 @@
     <div class="saved-reports" id="savedReportsList">
       <div class="empty-state">Aún no has añadido ninguna célula. Completa el formulario y presiona "Añadir célula".</div>
     </div>
-    <div style="text-align:right; margin-top:10px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:10px;">
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button type="button" class="btn-add" onclick="exportarBackupJSON()" style="font-size:0.72rem; padding:5px 10px;">Exportar Backup (.json)</button>
+        <button type="button" class="btn-add" onclick="abrirSelectorBackup()" style="font-size:0.72rem; padding:5px 10px;">Cargar Backup (.json)</button>
+      </div>
       <button type="button" class="btn-danger-outline" onclick="borrarProgresoGuardado()" style="font-size:0.72rem; padding:5px 10px;">Borrar progreso guardado</button>
     </div>
+    <input type="file" id="inputBackupJson" accept=".json,application/json" style="display:none;" onchange="procesarArchivoBackup(event)">
   </div>
 
   <div class="actions">

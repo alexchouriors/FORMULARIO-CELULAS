@@ -1063,6 +1063,242 @@ function procesarImportacion(){
 }
 
 /* ==========================================================
+   RESPALDO EN JSON (Exportar / Cargar backup)
+   ========================================================== */
+const BACKUP_TAGS_VALIDOS = ["Nueva","Cerrada"];
+
+// ---------- Exportar ----------
+function exportarBackupJSON(){
+  if(reportesSesion.length === 0){
+    mostrarToast("No hay células para exportar");
+    return;
+  }
+  try{
+    const contenido = JSON.stringify(reportesSesion, null, 2);
+    const blob = new Blob([contenido], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const ahora = new Date();
+    const pad = n => String(n).padStart(2, "0");
+    const sello = `${ahora.getFullYear()}-${pad(ahora.getMonth() + 1)}-${pad(ahora.getDate())}_${pad(ahora.getHours())}${pad(ahora.getMinutes())}`;
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `reportes_celulas_backup_${sello}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    mostrarToast(`Backup exportado (${reportesSesion.length} célula${reportesSesion.length === 1 ? "" : "s"}) ✓`);
+  } catch(err){
+    console.error("Error al exportar el backup:", err);
+    alert("No se pudo exportar el backup: " + err.message);
+  }
+}
+
+// ---------- Validación ----------
+function bkEsObjeto(v){
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
+function bkTexto(obj, campo, ctx){
+  const v = obj[campo];
+  if(v === undefined || v === null) return "";
+  if(typeof v !== "string") throw new Error(`${ctx}: el campo "${campo}" debe ser texto.`);
+  return v;
+}
+
+function bkNumero(obj, campo, ctx){
+  const v = obj[campo];
+  if(v === undefined || v === null) return 0;
+  if(typeof v !== "number" || !isFinite(v)) throw new Error(`${ctx}: el campo "${campo}" debe ser un número.`);
+  return v;
+}
+
+function bkListaTexto(obj, campo, ctx){
+  const v = obj[campo];
+  if(v === undefined || v === null) return [];
+  if(!Array.isArray(v) || v.some(x => typeof x !== "string")){
+    throw new Error(`${ctx}: el campo "${campo}" debe ser una lista de textos.`);
+  }
+  return v.slice();
+}
+
+function bkListaPersonas(obj, campo, ctx, conStatus){
+  const v = obj[campo];
+  if(v === undefined || v === null) return [];
+  if(!Array.isArray(v)) throw new Error(`${ctx}: el campo "${campo}" debe ser una lista.`);
+  return v.map((p, i) => {
+    const pctx = `${ctx}, ${campo} #${i + 1}`;
+    if(!bkEsObjeto(p)) throw new Error(`${pctx}: cada registro debe ser un objeto.`);
+    if(typeof p.nombre !== "string") throw new Error(`${pctx}: falta el "nombre" (texto).`);
+    if(!conStatus) return { nombre: p.nombre };
+    if(!STATUS_OPTIONS.includes(p.status)){
+      throw new Error(`${pctx}: el status "${p.status}" no es válido (permitidos: ${STATUS_OPTIONS.join(", ")}).`);
+    }
+    if(p.telefono !== undefined && p.telefono !== null && typeof p.telefono !== "string"){
+      throw new Error(`${pctx}: el "telefono" debe ser texto.`);
+    }
+    return { nombre: p.nombre, status: p.status, telefono: p.telefono || "" };
+  });
+}
+
+// Valida y normaliza un reporte. Devuelve un objeto limpio (sin _uid) o lanza Error descriptivo.
+function validarReporteBackup(r, i){
+  const ctx = `Célula #${i + 1}`;
+  if(!bkEsObjeto(r)) throw new Error(`${ctx}: no es un objeto válido.`);
+  if(!bkEsObjeto(r.general)) throw new Error(`${ctx}: falta el bloque "general".`);
+  if(!Array.isArray(r.asistentes)) throw new Error(`${ctx}: falta la lista "asistentes".`);
+
+  let tag = null;
+  if(r.tag !== undefined && r.tag !== null){
+    if(!BACKUP_TAGS_VALIDOS.includes(r.tag)){
+      throw new Error(`${ctx}: la etiqueta "${r.tag}" no es válida (usa Nueva o Cerrada).`);
+    }
+    tag = r.tag;
+  }
+
+  const g = r.general;
+  return {
+    tag,
+    general: {
+      nombreCelula: bkTexto(g, "nombreCelula", ctx),
+      equipo: bkTexto(g, "equipo", ctx),
+      fecha: bkTexto(g, "fecha", ctx),
+      ubicacion: bkTexto(g, "ubicacion", ctx),
+      tema: bkTexto(g, "tema", ctx),
+      cita: bkTexto(g, "cita", ctx),
+      efectivo: bkNumero(g, "efectivo", ctx),
+      transferencia: bkNumero(g, "transferencia", ctx),
+      dolares: bkNumero(g, "dolares", ctx),
+      nota: bkTexto(g, "nota", ctx)
+    },
+    lideresPrincipales: bkListaTexto(r, "lideresPrincipales", ctx),
+    lideresCelula: bkListaTexto(r, "lideresCelula", ctx),
+    anfitrion: bkListaTexto(r, "anfitrion", ctx),
+    asistentes: bkListaPersonas(r, "asistentes", ctx, true),
+    ninos: bkListaPersonas(r, "ninos", ctx, false),
+    inasistencias: bkListaPersonas(r, "inasistencias", ctx, false)
+  };
+}
+
+// Valida el contenido completo del archivo. Devuelve el arreglo de reportes normalizados.
+function validarBackup(datos){
+  let lista = datos;
+  if(bkEsObjeto(datos) && Array.isArray(datos.reportesSesion)) lista = datos.reportesSesion;
+  if(!Array.isArray(lista)){
+    throw new Error("El archivo no tiene el formato esperado: se esperaba una lista de células exportada desde esta aplicación.");
+  }
+  if(lista.length === 0){
+    throw new Error("El archivo no contiene ninguna célula.");
+  }
+  return lista.map((r, i) => validarReporteBackup(r, i));
+}
+
+// ---------- Cargar ----------
+function abrirSelectorBackup(){
+  const input = document.getElementById("inputBackupJson");
+  if(!input) return;
+  input.value = ""; // permite volver a elegir el mismo archivo
+  input.click();
+}
+
+function procesarArchivoBackup(event){
+  const input = event.target;
+  const archivo = input.files && input.files[0];
+  if(!archivo) return;
+
+  const lector = new FileReader();
+  lector.onload = () => {
+    let reportes;
+    try{
+      const texto = String(lector.result || "").replace(/^\uFEFF/, "");
+      let datos;
+      try{
+        datos = JSON.parse(texto);
+      } catch(errParse){
+        throw new Error("El archivo no es un JSON válido (" + errParse.message + ").");
+      }
+      reportes = validarBackup(datos);
+    } catch(err){
+      console.warn("Backup rechazado:", err);
+      alert("No se pudo cargar el backup:\n\n" + err.message);
+      input.value = "";
+      return;
+    }
+    input.value = "";
+
+    if(reportesSesion.length === 0){
+      aplicarBackup(reportes, "reemplazar");
+    } else {
+      mostrarModalModoCarga(reportes);
+    }
+  };
+  lector.onerror = () => {
+    alert("No se pudo leer el archivo seleccionado.");
+    input.value = "";
+  };
+  lector.readAsText(archivo, "utf-8");
+}
+
+function mostrarModalModoCarga(reportes){
+  cerrarModalModoCarga();
+  const overlay = document.createElement("div");
+  overlay.className = "copy-modal-overlay";
+  overlay.id = "backupModalOverlay";
+  overlay.innerHTML = `
+    <div class="copy-modal">
+      <h3>Cargar backup</h3>
+      <p>El archivo contiene <strong>${reportes.length}</strong> célula${reportes.length === 1 ? "" : "s"} y ya tienes <strong>${reportesSesion.length}</strong> en esta sesión. ¿Qué deseas hacer?</p>
+      <p><strong>Combinar</strong> agrega las del archivo a las actuales. <strong>Reemplazar</strong> borra las actuales y deja solo las del archivo.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" data-accion="cancelar">Cancelar</button>
+        <button type="button" class="btn-secondary" data-accion="combinar">Combinar</button>
+        <button type="button" class="btn-primary" data-accion="reemplazar">Reemplazar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener("click", (e) => {
+    if(e.target === overlay){ cerrarModalModoCarga(); return; }
+    const accion = e.target.dataset ? e.target.dataset.accion : null;
+    if(!accion) return;
+    cerrarModalModoCarga();
+    if(accion === "combinar") aplicarBackup(reportes, "combinar");
+    else if(accion === "reemplazar") aplicarBackup(reportes, "reemplazar");
+  });
+}
+
+function cerrarModalModoCarga(){
+  const overlay = document.getElementById("backupModalOverlay");
+  if(overlay) overlay.remove();
+}
+
+function aplicarBackup(reportes, modo){
+  if(modo === "reemplazar"){
+    reportesSesion.length = 0;
+    expandedUids.clear();
+    if(editingUid !== null){
+      // La célula en edición ya no existe: se cancela la edición y se limpia el formulario
+      editingUid = null;
+      limpiarFormulario();
+    }
+  }
+
+  // Se asignan _uid nuevos para evitar choques con los existentes
+  reportes.forEach(r => {
+    r._uid = nextId();
+    reportesSesion.push(r);
+  });
+
+  renderSavedReports();
+  guardarProgreso();
+  mostrarToast(`Backup cargado: ${reportes.length} célula${reportes.length === 1 ? "" : "s"} ✓`);
+}
+
+/* ==========================================================
    UTILIDADES
    ========================================================== */
 function escapeAttr(str){
