@@ -815,7 +815,7 @@ function extraerNombreYEtiqueta(line){
 
 function parseImportText(text){
   const resultado = {
-    general: { nombreCelula:"", fecha:"", ubicacion:"", tema:"", cita:"", efectivo: null, dolares: null, nota: null },
+    general: { nombreCelula:"", equipo:"", fecha:"", ubicacion:"", tema:"", cita:"", efectivo: null, dolares: null, nota: null },
     lideresPrincipales: [],
     lideresCelula: [],
     anfitrion: [],
@@ -838,6 +838,7 @@ function parseImportText(text){
   // siguientes cuando el encabezado no trae contenido ("Tema o Palabra Impartida:" solo)
   const TEXT_FIELD_TESTS = [
     { key: "nombreCelula", regex: /^(c[eé]lula|nombre\s*(de\s*c[eé]lula)?)\s*:\s*(.*)$/i },
+    { key: "equipo", regex: /^equipo\s*:\s*(.*)$/i },
     { key: "ubicacion", regex: /^ubicaci[oó]n\s*:\s*(.*)$/i },
     { key: "tema", regex: /^tema(\s*o\s*palabra\s*impartida)?\s*:\s*(.*)$/i },
     { key: "cita", regex: /^cita(\s*b[ií]blica)?\s*:\s*(.*)$/i },
@@ -995,6 +996,8 @@ function parseImportText(text){
 function aplicarImportacionAlFormulario(data){
   document.getElementById("nombreCelula").value = data.general.nombreCelula;
   document.getElementById("fecha").value = data.general.fecha; // solo se llena si viene en formato YYYY-MM-DD
+  const equipoResuelto = resolverEquipo(data.general.equipo);
+  if(equipoResuelto) document.getElementById("equipo").value = equipoResuelto;
   document.getElementById("ubicacion").value = data.general.ubicacion;
   document.getElementById("tema").value = data.general.tema;
   document.getElementById("cita").value = data.general.cita;
@@ -1060,6 +1063,318 @@ function procesarImportacion(){
   `;
 
   mostrarToast("Datos importados al formulario ✓");
+}
+
+/* ==========================================================
+   IMPORTACIÓN EN LOTE (múltiples células / fechas, desde texto o archivo .txt)
+   ========================================================== */
+let masivoItems = [];          // resultado del análisis: { snapshot, warnings, invalido, duplicado, seleccionado }
+let masivoTexto = "";          // texto pegado/cargado (se conserva al volver desde la vista previa)
+let masivoFechaDefecto = "";   // fecha (YYYY-MM-DD) para bloques sin "Fecha:"
+let masivoEquipoDefecto = "";  // equipo para bloques sin "Equipo:"
+
+function normalizarEquipoTexto(s){
+  return String(s || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\bEQUIPO\b/g, "")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim();
+}
+
+// Devuelve el valor exacto de una opción del <select id="equipo"> que coincida con el texto, o "".
+function resolverEquipo(texto){
+  const buscado = normalizarEquipoTexto(texto);
+  if(!buscado) return "";
+  const opciones = Array.from(document.getElementById("equipo").options).filter(o => o.value);
+  const exacta = opciones.find(o => normalizarEquipoTexto(o.value) === buscado);
+  if(exacta) return exacta.value;
+  const parcial = opciones.find(o => {
+    const n = normalizarEquipoTexto(o.value);
+    return n.includes(buscado) || buscado.includes(n);
+  });
+  return parcial ? parcial.value : "";
+}
+
+// Divide un texto con varios reportes en bloques individuales.
+// Un bloque nuevo empieza: tras una línea separadora (###, ===, ---), con un nuevo
+// título *entre asteriscos* cuando el bloque actual ya tiene fecha/secciones,
+// o cuando aparece una segunda línea "Fecha:" dentro del mismo bloque.
+function dividirEnBloques(texto){
+  const lineas = texto.split(/\r?\n/);
+  const bloques = [];
+  let actual = [];
+  let vistoFecha = false;
+  let vistoSeccion = false;
+
+  const esSeparador = l => /^\s*[#=\-_~*]{3,}\s*$/.test(l);
+  const PALABRAS_CAMPO = /^\*?\s*(asistenc|inasistenc|ni[ñn]os|l[ií]der|anfitri|fecha|tema|ofrenda|ubicaci|cita|nota|equipo|c[eé]lula\s*:)/i;
+  const esTitulo = l => {
+    const c = limpiarLineaEmojis(l.trim());
+    return /^\*[^*]+\*$/.test(c) && !PALABRAS_CAMPO.test(c);
+  };
+  const cerrar = () => {
+    if(actual.some(l => l.trim() !== "")) bloques.push(actual.join("\n"));
+    actual = [];
+    vistoFecha = false;
+    vistoSeccion = false;
+  };
+
+  for(const l of lineas){
+    if(esSeparador(l)){ cerrar(); continue; }
+
+    const clean = limpiarLineaEmojis(l.trim());
+    const esFecha = /^fecha\s*:/i.test(clean);
+    const esSeccion = /^(asistenc(ia|ias)|inasistenc(ia|ias)|l[ií]deres?\s+principal(es)?|anfitri[oó]n(a)?)\s*:?$/i.test(clean);
+
+    if(esTitulo(l) && (vistoFecha || vistoSeccion)){
+      cerrar();
+    } else if(esFecha && vistoFecha){
+      // Segundo "Fecha:" sin título nuevo: el título del reporte nuevo es la última línea previa, si lo hay
+      let i = actual.length - 1;
+      while(i >= 0 && actual[i].trim() === "") i--;
+      let titulo = null;
+      if(i > 0 && esTitulo(actual[i])){
+        titulo = actual[i];
+        actual.splice(i);
+      }
+      cerrar();
+      if(titulo) actual.push(titulo);
+    }
+
+    actual.push(l);
+    if(esFecha) vistoFecha = true;
+    if(esSeccion) vistoSeccion = true;
+  }
+  cerrar();
+  return bloques;
+}
+
+// Convierte el resultado de parseImportText en un snapshot idéntico al de anadirCelula()
+function construirSnapshotDesdeImport(data, fechaDefecto, equipoDefecto){
+  const g = data.general;
+  return {
+    _uid: null,
+    tag: null,
+    general: {
+      nombreCelula: (g.nombreCelula || "").trim(),
+      equipo: resolverEquipo(g.equipo) || equipoDefecto || "",
+      fecha: g.fecha || fechaDefecto || "",
+      ubicacion: (g.ubicacion || "").trim(),
+      tema: (g.tema || "").trim(),
+      cita: (g.cita || "").trim(),
+      efectivo: g.efectivo !== null ? g.efectivo : 0,
+      transferencia: 0,
+      dolares: g.dolares !== null ? g.dolares : 0,
+      nota: (g.nota || "").trim()
+    },
+    lideresPrincipales: data.lideresPrincipales.map(v => v.trim()).filter(Boolean),
+    lideresCelula: data.lideresCelula.map(v => v.trim()).filter(Boolean),
+    anfitrion: data.anfitrion.map(v => v.trim()).filter(Boolean),
+    asistentes: data.asistentes.map(a => ({ nombre: (a.nombre || "").trim() || "(sin nombre)", status: a.status, telefono: (a.telefono || "").trim() })),
+    ninos: data.ninos.map(n => ({ nombre: (n || "").trim() || "(sin nombre)" })),
+    inasistencias: data.inasistencias.map(i => ({ nombre: (i || "").trim() || "(sin nombre)" }))
+  };
+}
+
+function cerrarModalMasivo(){
+  const overlay = document.getElementById("masivoOverlay");
+  if(overlay) overlay.remove();
+}
+
+function abrirModalMasivo(){
+  cerrarModalMasivo();
+  const overlay = document.createElement("div");
+  overlay.className = "copy-modal-overlay";
+  overlay.id = "masivoOverlay";
+
+  const opcionesEquipo = document.getElementById("equipo").innerHTML;
+
+  overlay.innerHTML = `
+    <div class="copy-modal import-modal" id="masivoModal">
+      <h3>Importar células en lote</h3>
+      <p>Pega varios reportes seguidos (el mismo formato del botón "Importar") o carga uno o más archivos <strong>.txt</strong>. Cada reporte se detecta por su título <em>*Nombre*</em>, por su línea "Fecha:" o por una línea separadora (###, ===, ---). Antes de añadir verás una vista previa.</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+        <button type="button" class="btn-add" onclick="document.getElementById('masivoArchivo').click()">📄 Cargar archivo(s) .txt</button>
+        <span id="masivoArchivoInfo" style="font-size:0.78rem; color:var(--muted);"></span>
+        <input type="file" id="masivoArchivo" accept=".txt,text/plain" multiple style="display:none;" onchange="cargarArchivosMasivo(event)">
+      </div>
+      <textarea id="masivoTextarea" placeholder="Pega aquí todos los reportes..."></textarea>
+      <div class="grid2">
+        <div class="field" style="margin-bottom:0;">
+          <label for="masivoFechaDef">Fecha por defecto (para reportes sin "Fecha:")</label>
+          <input type="date" id="masivoFechaDef">
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label for="masivoEquipoDef">Equipo por defecto (para reportes sin "Equipo:")</label>
+          <select id="masivoEquipoDef">${opcionesEquipo}</select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" onclick="cerrarModalMasivo()">Cancelar</button>
+        <button type="button" class="btn-primary" onclick="analizarMasivo()">Analizar reportes</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  document.getElementById("masivoTextarea").value = masivoTexto;
+  document.getElementById("masivoFechaDef").value = masivoFechaDefecto;
+  document.getElementById("masivoEquipoDef").value = masivoEquipoDefecto;
+  document.getElementById("masivoTextarea").focus();
+}
+
+function cargarArchivosMasivo(event){
+  const input = event.target;
+  const archivos = Array.from(input.files || []);
+  if(archivos.length === 0) return;
+
+  const leer = (archivo) => new Promise((resolve, reject) => {
+    const lector = new FileReader();
+    lector.onload = () => resolve(String(lector.result || "").replace(/^\uFEFF/, ""));
+    lector.onerror = () => reject(new Error(`No se pudo leer "${archivo.name}"`));
+    lector.readAsText(archivo, "utf-8");
+  });
+
+  Promise.all(archivos.map(leer)).then(textos => {
+    const ta = document.getElementById("masivoTextarea");
+    if(!ta) return;
+    const nuevo = textos.join("\n\n###\n\n");
+    ta.value = ta.value.trim() ? ta.value.replace(/\s+$/, "") + "\n\n###\n\n" + nuevo : nuevo;
+    const info = document.getElementById("masivoArchivoInfo");
+    if(info) info.textContent = `${archivos.length} archivo${archivos.length === 1 ? "" : "s"} cargado${archivos.length === 1 ? "" : "s"}`;
+    input.value = "";
+  }).catch(err => {
+    alert(err.message);
+    input.value = "";
+  });
+}
+
+function analizarMasivo(){
+  const ta = document.getElementById("masivoTextarea");
+  masivoTexto = ta.value;
+  masivoFechaDefecto = document.getElementById("masivoFechaDef").value;
+  masivoEquipoDefecto = document.getElementById("masivoEquipoDef").value;
+
+  if(!masivoTexto.trim()){
+    mostrarToast("Pega o carga el texto de los reportes antes de continuar");
+    return;
+  }
+
+  const bloques = dividirEnBloques(masivoTexto);
+  if(bloques.length === 0){
+    mostrarToast("No se detectó ningún reporte en el texto");
+    return;
+  }
+
+  const claveExistente = new Set(reportesSesion.map(r =>
+    `${(r.general.nombreCelula || "").trim().toLowerCase()}|${r.general.fecha || ""}`
+  ));
+  const clavesDelLote = new Set();
+
+  masivoItems = bloques.map(bloque => {
+    const data = parseImportText(bloque);
+    const snapshot = construirSnapshotDesdeImport(data, masivoFechaDefecto, masivoEquipoDefecto);
+    const warnings = data.noReconocido.slice();
+
+    if(!snapshot.general.fecha) warnings.push("Sin fecha: se añadirá sin fecha (puedes editarla después).");
+    if(!snapshot.general.equipo) warnings.push("Sin equipo: se añadirá sin equipo (puedes editarlo después).");
+
+    const invalido = !snapshot.general.nombreCelula && snapshot.asistentes.length === 0;
+    const clave = `${snapshot.general.nombreCelula.toLowerCase()}|${snapshot.general.fecha}`;
+    const duplicado = !invalido && snapshot.general.nombreCelula !== "" &&
+      (claveExistente.has(clave) || clavesDelLote.has(clave));
+    if(!invalido) clavesDelLote.add(clave);
+
+    return { snapshot, warnings, invalido, duplicado, seleccionado: !invalido && !duplicado };
+  });
+
+  renderVistaPreviaMasivo();
+}
+
+function toggleSeleccionMasivo(i, checked){
+  if(masivoItems[i]) masivoItems[i].seleccionado = checked;
+  actualizarBotonConfirmarMasivo();
+}
+
+function actualizarBotonConfirmarMasivo(){
+  const btn = document.getElementById("btnConfirmarMasivo");
+  if(!btn) return;
+  const n = masivoItems.filter(it => it.seleccionado).length;
+  btn.textContent = `Añadir ${n} célula${n === 1 ? "" : "s"}`;
+  btn.disabled = n === 0;
+}
+
+function renderVistaPreviaMasivo(){
+  const modal = document.getElementById("masivoModal");
+  if(!modal) return;
+
+  const filas = masivoItems.map((it, i) => {
+    const s = it.snapshot;
+    const nombre = s.general.nombreCelula || "(sin nombre)";
+    const badges = [
+      it.invalido ? `<span class="mini-tag Cerrada">Vacío</span>` : "",
+      it.duplicado ? `<span class="mini-tag editing-tag">Posible duplicado</span>` : ""
+    ].join(" ");
+    const avisos = it.warnings.length > 0
+      ? `<div class="unrecognized-box" style="margin-top:6px;"><ul style="margin:0 0 0 16px;">${it.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join("")}</ul></div>`
+      : "";
+    return `
+      <div style="border-bottom:1px dashed #cfc9ba; padding:8px 0;">
+        <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
+          <input type="checkbox" ${it.seleccionado ? "checked" : ""} ${it.invalido ? "disabled" : ""}
+            onchange="toggleSeleccionMasivo(${i}, this.checked)" style="margin-top:3px;">
+          <span>
+            <strong>${escapeHtml(nombre)}</strong> ${badges}<br>
+            <span style="color:var(--muted); font-size:0.78rem;">
+              ${escapeHtml(s.general.fecha || "(sin fecha)")} · Asistentes: ${s.asistentes.length} · Niños: ${s.ninos.length} · Inasist.: ${s.inasistencias.length}
+              ${s.general.equipo ? " · " + escapeHtml(s.general.equipo) : ""}
+            </span>
+          </span>
+        </label>
+        ${avisos}
+      </div>
+    `;
+  }).join("");
+
+  const nValidos = masivoItems.filter(it => !it.invalido).length;
+  const nDup = masivoItems.filter(it => it.duplicado).length;
+
+  modal.innerHTML = `
+    <h3>Vista previa de la importación en lote</h3>
+    <p>Se detectaron <strong>${masivoItems.length}</strong> bloque${masivoItems.length === 1 ? "" : "s"} (${nValidos} con datos${nDup ? `, ${nDup} posible${nDup === 1 ? "" : "s"} duplicado${nDup === 1 ? "" : "s"} ya desmarcado${nDup === 1 ? "" : "s"}` : ""}). Marca las que quieras añadir a la sesión.</p>
+    <div class="import-summary">${filas}</div>
+    <div class="modal-actions">
+      <button type="button" class="btn-secondary" onclick="cerrarModalMasivo()">Cancelar</button>
+      <button type="button" class="btn-secondary" onclick="abrirModalMasivo()">← Volver al texto</button>
+      <button type="button" class="btn-primary" id="btnConfirmarMasivo" onclick="confirmarMasivo()">Añadir</button>
+    </div>
+  `;
+  actualizarBotonConfirmarMasivo();
+}
+
+function confirmarMasivo(){
+  const aAnadir = masivoItems.filter(it => it.seleccionado);
+  if(aAnadir.length === 0){
+    mostrarToast("No hay células seleccionadas");
+    return;
+  }
+
+  aAnadir.forEach(it => {
+    it.snapshot._uid = nextId();
+    reportesSesion.push(it.snapshot);
+  });
+
+  renderSavedReports();
+  guardarProgreso();
+  cerrarModalMasivo();
+
+  masivoItems = [];
+  masivoTexto = "";
+  masivoFechaDefecto = "";
+  masivoEquipoDefecto = "";
+
+  mostrarToast(`${aAnadir.length} célula${aAnadir.length === 1 ? "" : "s"} añadida${aAnadir.length === 1 ? "" : "s"} en lote ✓`);
 }
 
 /* ==========================================================
