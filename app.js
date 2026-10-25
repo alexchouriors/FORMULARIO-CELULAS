@@ -838,7 +838,7 @@ function parseImportText(text){
   // siguientes cuando el encabezado no trae contenido ("Tema o Palabra Impartida:" solo)
   const TEXT_FIELD_TESTS = [
     { key: "nombreCelula", regex: /^(c[eé]lula|nombre\s*(de\s*c[eé]lula)?)\s*:\s*(.*)$/i },
-    { key: "equipo", regex: /^equipo\s*:\s*(.*)$/i },
+    { key: "equipo", regex: /^equipo\b\s*[:\-–—]?\s*(.*)$/i },
     { key: "ubicacion", regex: /^ubicaci[oó]n\s*:\s*(.*)$/i },
     { key: "tema", regex: /^tema(\s*o\s*palabra\s*impartida)?\s*:\s*(.*)$/i },
     { key: "cita", regex: /^cita(\s*b[ií]blica)?\s*:\s*(.*)$/i },
@@ -920,6 +920,12 @@ function parseImportText(text){
     }
     if(matchedTextField) continue;
 
+    // 3b) Línea suelta que coincide exactamente con un equipo conocido (ej: "Jonathan y Mayerlin")
+    if(!currentSection && !currentTextField && !resultado.general.equipo && equipoExacto(clean)){
+      resultado.general.equipo = clean;
+      continue;
+    }
+
     // 4) Líneas de conteo (tally), se ignoran sin generar aviso
     if(esLineaTally(clean)){
       currentTextField = null;
@@ -976,6 +982,10 @@ function parseImportText(text){
       // No hay sección activa y la línea no encajó en nada conocido
       resultado.noReconocido.push(`Línea no reconocida (se ignoró): "${clean}"`);
     }
+  }
+
+  if(resultado.general.equipo && !resolverEquipo(resultado.general.equipo)){
+    resultado.noReconocido.push(`Equipo no coincide con ninguna opción del selector: "${resultado.general.equipo}"`);
   }
 
   // Aplicar límites de líderes/anfitrión, avisando si sobran
@@ -1039,6 +1049,7 @@ function procesarImportacion(){
   const resumenHtml = `
     <h4>Se importó correctamente:</h4>
     <ul>
+      <li>Equipo: ${escapeHtml(resolverEquipo(data.general.equipo) || "(no detectado)")}</li>
       <li>Líderes principales: ${data.lideresPrincipales.length}</li>
       <li>Líderes de célula: ${data.lideresCelula.length}</li>
       <li>Anfitrión: ${data.anfitrion.length}</li>
@@ -1094,6 +1105,14 @@ function resolverEquipo(texto){
     return n.includes(buscado) || buscado.includes(n);
   });
   return parcial ? parcial.value : "";
+}
+
+// true si el texto coincide exactamente (normalizado) con alguna opción del selector de equipo
+function equipoExacto(texto){
+  const buscado = normalizarEquipoTexto(texto);
+  if(!buscado) return false;
+  return Array.from(document.getElementById("equipo").options)
+    .some(o => o.value && normalizarEquipoTexto(o.value) === buscado);
 }
 
 // Divide un texto con varios reportes en bloques individuales.
